@@ -1,0 +1,967 @@
+[1mdiff --git a/README.md b/README.md[m
+[1mindex db76c59..627567a 100644[m
+[1m--- a/README.md[m
+[1m+++ b/README.md[m
+[36m@@ -1,6 +1,8 @@[m
+ # F-SERVO (File and Scripts EditoR Version One)[m
+ [m
+[31m-A tool for modding a variety of files in Nier:Automata[m
+[32m+[m[32mA tool for modding a variety of files in Nier:Automata.[m
+[32m+[m
+[32m+[m[32mThis fork adds **experimental Platinum Games Wii U / big-endian support** for Bayonetta-style archives and localization assets, based on byte-level analysis of a Wii U `ui_title_us.dat` sample and cross-checking against the public `bayonetta_tools` format templates/scripts.[m
+ [m
+ Supported file types:[m
+ - DAT, DTT[m
+[36m@@ -17,14 +19,80 @@[m [mSupported file types:[m
+ - Save files (SlotData_X.dat)[m
+ - EST (effects)[m
+ [m
+[32m+[m[32m## Wii U / big-endian Platinum Games support added in this fork[m
+[32m+[m
+[32m+[m[32mThis fork extends the existing Nier:Automata-oriented code paths so they can also handle the Wii U sample layout used by Platinum Games titles such as Bayonetta 2. The implementation is intentionally conservative: existing PC/little-endian Nier:Automata behavior is preserved, while Wii U files are detected through header plausibility checks, magic values and metadata stored during extraction.[m
+[32m+[m
+[32m+[m[32m| Area | Added behavior |[m
+[32m+[m[32m|---|---|[m
+[32m+[m[32m| DAT/DTT archives | Autodetects little-endian PC archives and big-endian Wii U archives. Extracted `dat_info.json` now stores `endian` and `platform`, and repacking uses the original endianess instead of assuming little-endian. |[m
+[32m+[m[32m| WTA/WTP textures | Supports Wii U big-endian `\0BTW` WTA headers, 0xC0-byte GX2 texture metadata records, `.wtp` payload offsets/sizes and mipmap offsets/sizes. Wii U texture extraction emits `.gtx` instead of `.dds`. |[m
+[32m+[m[32m| WTA/WTP reinsertion | Wii U `.gtx` imports are parsed back into GX2 metadata, main image data and mipmap data. Rebuilt `.wta/.wtp` preserve Wii U layout/alignment. |[m
+[32m+[m[32m| MCD localization | Adds endianess detection for MCD files so Bayonetta 2 / Wii U message containers can be read and rewritten without byte-order corruption. |[m
+[32m+[m[32m| UI import filter | The WTA/WTP editor accepts `.gtx` when the currently opened texture container is Wii U, while preserving `.dds` for the original PC workflow. |[m
+[32m+[m[32m| Case-sensitive build fix | Corrected the `BatchLocalizationTool.dart` import capitalization so the repository analyzes/builds correctly on Linux as well as Windows. |[m
+[32m+[m
+[32m+[m[32mThe additional command-line utility `tools/platinum_wiiu_tools.py` is included for Windows-friendly extraction/rebuild workflows outside the Flutter UI. It is pure Python 3 and does not require Visual Studio.[m
+[32m+[m
+[32m+[m[32m## Python utility for Wii U DAT, WTA/WTP and MCD[m
+[32m+[m
+[32m+[m[32mThe file `tools/platinum_wiiu_tools.py` provides standalone commands for localization and texture workflows. It is useful both as a validation tool and as a scriptable Windows workflow.[m
+[32m+[m
+[32m+[m[32m```bat[m
+[32m+[m[32mpy -3 tools\platinum_wiiu_tools.py --help[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32mTypical usage:[m
+[32m+[m
+[32m+[m[32m```bat[m
+[32m+[m[32mREM Extract a Wii U DAT archive and preserve dat_info.json metadata[m
+[32m+[m[32mpy -3 tools\platinum_wiiu_tools.py dat-extract ui_title_us.dat extracted_ui_title_us[m
+[32m+[m
+[32m+[m[32mREM Rebuild a DAT from an extracted folder that contains dat_info.json[m
+[32m+[m[32mpy -3 tools\platinum_wiiu_tools.py dat-build extracted_ui_title_us ui_title_us_repacked.dat[m
+[32m+[m
+[32m+[m[32mREM Extract Wii U WTA/WTP textures as GTX files[m
+[32m+[m[32mpy -3 tools\platinum_wiiu_tools.py wtx-extract extracted_ui_title_us\title.wta title_wtx --wtp extracted_ui_title_us\title.wtp[m
+[32m+[m
+[32m+[m[32mREM Rebuild Wii U WTA/WTP from GTX files plus wtx_info.json[m
+[32m+[m[32mpy -3 tools\platinum_wiiu_tools.py wtx-build title_wtx title_rebuilt.wta --wtp title_rebuilt.wtp[m
+[32m+[m
+[32m+[m[32mREM Export Wii U MCD strings to JSON/TXT[m
+[32m+[m[32mpy -3 tools\platinum_wiiu_tools.py mcd-export extracted_ui_title_us\messtitle.mcd messtitle.json --txt messtitle.txt[m
+[32m+[m
+[32m+[m[32mREM Import edited MCD JSON back into a Wii U MCD[m
+[32m+[m[32mpy -3 tools\platinum_wiiu_tools.py mcd-import messtitle.json messtitle_rebuilt.mcd[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32mThe MCD JSON export stores the original string entry offsets so that unchanged or duplicated strings can be reinserted safely. For translated strings, keep the JSON structure intact and edit only the exported text values unless you also intend to adjust low-level metadata manually.[m
+[32m+[m
+[32m+[m[32m## Validation performed for the Wii U sample[m
+[32m+[m
+[32m+[m[32mThe Wii U `ui_title_us.dat` sample was analyzed byte by byte and validated end-to-end with fresh output directories after implementation. The sample is a **big-endian DAT** that contains, among other entries, `title.wta/title.wtp`, `messtitle.wta/messtitle.wtp` and `messtitle.mcd`.[m
+[32m+[m
+[32m+[m[32m| Validation step | Result |[m
+[32m+[m[32m|---|---|[m
+[32m+[m[32m| DAT extraction | The big-endian file table was detected and all internal files were extracted with names, offsets and sizes preserved in `dat_info.json`. |[m
+[32m+[m[32m| WTA/WTP extraction | `title.wta/title.wtp` produced 9 `.gtx` textures; `messtitle.wta/messtitle.wtp` produced 1 `.gtx` texture. |[m
+[32m+[m[32m| Texture visual check | GTX files were converted through an inspected local GTX-to-DDS converter and PNG previews/contact sheet were generated for visual inspection. |[m
+[32m+[m[32m| WTA/WTP round-trip | Rebuilt WTA/WTP pairs were re-extracted and the resulting GTX payload hashes matched the original extracted GTX files. |[m
+[32m+[m[32m| MCD export/import | `messtitle.mcd` strings were exported to JSON/TXT, reimported without text changes, and re-exported for string-level comparison. |[m
+[32m+[m[32m| DAT rebuild | Extracted Wii U DAT contents were repacked using big-endian metadata into `ui_title_us_repacked.dat`. |[m
+[32m+[m[32m| Flutter analysis | `flutter analyze` reports no errors after the changes; remaining diagnostics are warnings/info already present in the project style/assets. |[m
+[32m+[m[32m| Compile validation | A Linux debug build was successfully produced in the sandbox after installing Linux native Flutter dependencies. Windows executables must still be built on Windows because Flutter desktop Windows builds require a Windows host. |[m
+[32m+[m
+ ## Installation[m
+ [m
+ Go to the [releases](https://github.com/ArthurHeitmann/F-SERVO/releases) page and download the latest `F-SERVO_x.x.x.7z` file. Extract the archive and run `F-SERVO.exe`.[m
+ [m
+[32m+[m[32mFor this Wii U fork, if a prebuilt Windows executable is not included, build it locally from source using the Windows instructions below. This project is a **Flutter/Dart desktop application**, not a .NET application, so `dotnet build` is not applicable.[m
+[32m+[m
+ ## Usage[m
+ [m
+ See the incomplete [wiki](https://github.com/ArthurHeitmann/F-SERVO/wiki/Getting-Started).[m
+ [m
+[32m+[m[32mFor Wii U texture localization workflows, open a Wii U WTA/WTP pair in the normal texture editor. Extracted textures will use the `.gtx` extension. When replacing textures, import `.gtx` files with compatible GX2 texture metadata. The standalone Python utility can also be used for batch workflows and round-trip validation.[m
+[32m+[m
+ ## Screenshots[m
+ [m
+ ![image](https://user-images.githubusercontent.com/37270165/221270764-b10a7810-f704-47c6-9b1b-fe652d00ee05.png)  [m
+[36m@@ -42,6 +110,45 @@[m [mMCD editing[m
+ - [Nier Discord modding server](https://discord.gg/ngAK7rT)[m
+ - My Discord name: @raiderbv[m
+ [m
+[32m+[m[32m## Building on Windows[m
+[32m+[m
+[32m+[m[32m1. Install [Flutter for Windows](https://docs.flutter.dev/get-started/install/windows). During setup, make sure `flutter` is available from `cmd` or PowerShell.[m
+[32m+[m
+[32m+[m[32m2. Install **Visual Studio Build Tools 2022** with the "Desktop development with C++" workload. Flutter requires the Windows C++ toolchain to build desktop apps.[m
+[32m+[m
+[32m+[m[32m3. Clone this repository:[m
+[32m+[m
+[32m+[m[32m   ```bat[m
+[32m+[m[32m   git clone https://github.com/YOUR_USER/F-SERVO.git[m
+[32m+[m[32m   cd F-SERVO[m
+[32m+[m[32m   ```[m
+[32m+[m
+[32m+[m[32m4. Get all assets:[m
+[32m+[m
+[32m+[m[32m   ```bat[m
+[32m+[m[32m   git submodule update --init --recursive[m
+[32m+[m[32m   ```[m
+[32m+[m
+[32m+[m[32m   Download additional assets from [here](https://github.com/ArthurHeitmann/F-SERVO/releases/tag/assetsV0.7.0) and extract the folders inside into the `assets` folder. This keeps the raw git repository smaller than 100 MB.[m
+[32m+[m
+[32m+[m[32m5. Update dependencies:[m
+[32m+[m
+[32m+[m[32m   ```bat[m
+[32m+[m[32m   flutter pub get[m
+[32m+[m[32m   ```[m
+[32m+[m
+[32m+[m[32m6. Build the Windows executable:[m
+[32m+[m
+[32m+[m[32m   ```bat[m
+[32m+[m[32m   flutter build windows --release[m
+[32m+[m[32m   ```[m
+[32m+[m
+[32m+[m[32m7. The executable will be generated under:[m
+[32m+[m
+[32m+[m[32m   ```text[m
+[32m+[m[32m   build\windows\x64\runner\Release\[m
+[32m+[m[32m   ```[m
+[32m+[m
+ ## Building (for developers only)[m
+ [m
+ 1. [Setup Flutter for Windows](https://docs.flutter.dev/get-started/install/windows)[m
+[36m@@ -60,4 +167,7 @@[m [mMCD editing[m
+    flutter pub get[m
+    ```[m
+ [m
+[31m-5. Run with your IDE of choice or for release build `flutter build windows --release`[m
+[32m+[m[32m5. Run with your IDE of choice or for release build:[m
+[32m+[m[32m   ```bat[m
+[32m+[m[32m   flutter build windows --release[m
+[32m+[m[32m   ```[m
+[1mdiff --git a/lib/fileTypeUtils/dat/datExtractor.dart b/lib/fileTypeUtils/dat/datExtractor.dart[m
+[1mindex 7efaf4f..4939ae3 100644[m
+[1m--- a/lib/fileTypeUtils/dat/datExtractor.dart[m
+[1m+++ b/lib/fileTypeUtils/dat/datExtractor.dart[m
+[36m@@ -1,6 +1,7 @@[m
+ [m
+ import 'dart:convert';[m
+ import 'dart:io';[m
+[32m+[m[32mimport 'dart:typed_data';[m
+ [m
+ import 'package:path/path.dart' as path;[m
+ [m
+[36m@@ -9,7 +10,7 @@[m [mimport '../../utils/utils.dart';[m
+ import '../pak/pakExtractor.dart';[m
+ import '../utils/ByteDataWrapper.dart';[m
+ [m
+[31m-const currentDatVersion = 3;[m
+[32m+[m[32mconst currentDatVersion = 4;[m
+ [m
+ /*[m
+ struct {[m
+[36m@@ -30,9 +31,39 @@[m [mclass _DatHeader {[m
+   late int fileNamesOffset;[m
+   late int fileSizesOffset;[m
+   late int hashMapOffset;[m
+[32m+[m[32m  late Endian endian;[m
+[32m+[m
+[32m+[m[32m  bool get isBigEndian => endian == Endian.big;[m
+[32m+[m[32m  String get endianName => isBigEndian ? "big" : "little";[m
+[32m+[m[32m  String get platformName => isBigEndian ? "wiiu" : "pc";[m
+ [m
+   _DatHeader(ByteDataWrapper bytes) {[m
+[32m+[m[32m    bytes.position = 0;[m
+     id = bytes.readString(4);[m
+[32m+[m[32m    if (!id.startsWith("DAT"))[m
+[32m+[m[32m      throw FormatException("Invalid DAT magic: $id");[m
+[32m+[m
+[32m+[m[32m    final fieldsOffset = bytes.position;[m
+[32m+[m
+[32m+[m[32m    bytes.endian = Endian.little;[m
+[32m+[m[32m    _readFields(bytes, fieldsOffset);[m
+[32m+[m[32m    if (_looksValid(bytes)) {[m
+[32m+[m[32m      endian = Endian.little;[m
+[32m+[m[32m      return;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    bytes.endian = Endian.big;[m
+[32m+[m[32m    _readFields(bytes, fieldsOffset);[m
+[32m+[m[32m    if (_looksValid(bytes)) {[m
+[32m+[m[32m      endian = Endian.big;[m
+[32m+[m[32m      return;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    throw FormatException("Unsupported DAT header: neither little-endian nor big-endian tables are valid");[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  void _readFields(ByteDataWrapper bytes, int fieldsOffset) {[m
+[32m+[m[32m    bytes.position = fieldsOffset;[m
+     fileNumber = bytes.readUint32();[m
+     fileOffsetsOffset = bytes.readUint32();[m
+     fileExtensionsOffset = bytes.readUint32();[m
+[36m@@ -40,6 +71,30 @@[m [mclass _DatHeader {[m
+     fileSizesOffset = bytes.readUint32();[m
+     hashMapOffset = bytes.readUint32();[m
+   }[m
+[32m+[m
+[32m+[m[32m  bool _rangeInside(int offset, int size, int length) {[m
+[32m+[m[32m    return offset >= 0x20 && size >= 0 && offset <= length && offset + size <= length;[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  bool _looksValid(ByteDataWrapper bytes) {[m
+[32m+[m[32m    final len = bytes.length;[m
+[32m+[m[32m    if (fileNumber <= 0 || fileNumber > 100000)[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    if (!_rangeInside(fileOffsetsOffset, fileNumber * 4, len))[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    if (!_rangeInside(fileExtensionsOffset, fileNumber * 4, len))[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    if (!_rangeInside(fileNamesOffset, 4, len))[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    if (!_rangeInside(fileSizesOffset, fileNumber * 4, len))[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    if (hashMapOffset < fileSizesOffset || hashMapOffset > len)[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    return fileOffsetsOffset < fileExtensionsOffset &&[m
+[32m+[m[32m      fileExtensionsOffset < fileNamesOffset &&[m
+[32m+[m[32m      fileNamesOffset < fileSizesOffset &&[m
+[32m+[m[32m      fileSizesOffset < hashMapOffset;[m
+[32m+[m[32m  }[m
+ }[m
+ [m
+ Future<List<String>> extractDatFiles(String datPath, { bool shouldExtractPakFiles = false }) async {[m
+[36m@@ -48,6 +103,7 @@[m [mFuture<List<String>> extractDatFiles(String datPath, { bool shouldExtractPakFile[m
+ [m
+   var bytes = await ByteDataWrapper.fromFile(datPath);[m
+   var header = _DatHeader(bytes);[m
+[32m+[m[32m  bytes.endian = header.endian;[m
+   bytes.position = header.fileOffsetsOffset;[m
+   var fileOffsets = bytes.readUint32List(header.fileNumber);[m
+   bytes.position = header.fileSizesOffset;[m
+[36m@@ -55,7 +111,7 @@[m [mFuture<List<String>> extractDatFiles(String datPath, { bool shouldExtractPakFile[m
+   bytes.position = header.fileNamesOffset;[m
+   var nameLength = bytes.readUint32();[m
+   var fileNames = List<String>[m
+[31m-    .generate(header.fileNumber, (index) => [m
+[32m+[m[32m    .generate(header.fileNumber, (index) =>[m
+     bytes.readString(nameLength).split("\u0000")[0]);[m
+ [m
+   // extract dir is file path --> /nier2blender_extracted/[filename]/[m
+[36m@@ -76,6 +132,8 @@[m [mFuture<List<String>> extractDatFiles(String datPath, { bool shouldExtractPakFile[m
+     "original_order": fileNames,[m
+     "basename": path.basename(datPath).split(".")[0],[m
+     "ext": path.basename(datPath).split(".")[1],[m
+[32m+[m[32m    "endian": header.endianName,[m
+[32m+[m[32m    "platform": header.platformName,[m
+   };[m
+   await File(path.join(extractDir, "dat_info.json"))[m
+     .writeAsString(const JsonEncoder.withIndent("\t").convert(jsonMetadata));[m
+[36m@@ -104,6 +162,7 @@[m [mStream<ExtractedInnerFile> extractDatFilesAsStream(String datPath) async* {[m
+   try {[m
+     var bytes = await ByteDataWrapper.fromFile(datPath);[m
+     var header = _DatHeader(bytes);[m
+[32m+[m[32m    bytes.endian = header.endian;[m
+     bytes.position = header.fileOffsetsOffset;[m
+     var fileOffsets = bytes.readUint32List(header.fileNumber);[m
+     bytes.position = header.fileSizesOffset;[m
+[36m@@ -111,7 +170,7 @@[m [mStream<ExtractedInnerFile> extractDatFilesAsStream(String datPath) async* {[m
+     bytes.position = header.fileNamesOffset;[m
+     var nameLength = bytes.readUint32();[m
+     var fileNames = List<String>[m
+[31m-      .generate(header.fileNumber, (index) => [m
+[32m+[m[32m      .generate(header.fileNumber, (index) =>[m
+       bytes.readString(nameLength).split("\u0000")[0]);[m
+ [m
+     for (int i = 0; i < header.fileNumber; i++) {[m
+[36m@@ -131,10 +190,11 @@[m [mStream<ExtractedInnerFile> extractDatFilesAsStream(String datPath) async* {[m
+ Future<List<String>> peekDatFileNames(String datPath) async {[m
+   var bytes = await ByteDataWrapper.fromFile(datPath);[m
+   var header = _DatHeader(bytes);[m
+[32m+[m[32m  bytes.endian = header.endian;[m
+   bytes.position = header.fileNamesOffset;[m
+   var nameLength = bytes.readUint32();[m
+   return List<String>[m
+[31m-    .generate(header.fileNumber, (index) => [m
+[32m+[m[32m    .generate(header.fileNumber, (index) =>[m
+     bytes.readString(nameLength).split("\u0000")[0]);[m
+ }[m
+ [m
+[36m@@ -143,16 +203,19 @@[m [mFuture<void> updateDatInfoFileOriginalOrder(String datPath, String extractDir) a[m
+   var datInfoPath = path.join(extractDir, "dat_info.json");[m
+   if (!await File(datInfoPath).exists())[m
+     return;[m
+[31m-  [m
+[32m+[m
+   var bytes = await ByteDataWrapper.fromFile(datPath);[m
+   var header = _DatHeader(bytes);[m
+[32m+[m[32m  bytes.endian = header.endian;[m
+   bytes.position = header.fileNamesOffset;[m
+   var nameLength = bytes.readUint32();[m
+   var fileNames = List.generate(header.fileNumber, (index) => bytes.readString(nameLength).split("\u0000")[0]);[m
+[31m-  [m
+[32m+[m
+   var datInfo = jsonDecode(await File(datInfoPath).readAsString()) as Map;[m
+   datInfo["original_order"] = fileNames;[m
+   datInfo["version"] = currentDatVersion;[m
+[32m+[m[32m  datInfo["endian"] = header.endianName;[m
+[32m+[m[32m  datInfo["platform"] = header.platformName;[m
+   var datInfoJson = const JsonEncoder.withIndent("\t").convert(datInfo);[m
+   await File(datInfoPath).writeAsString(datInfoJson);[m
+ }[m
+[1mdiff --git a/lib/fileTypeUtils/dat/datRepacker.dart b/lib/fileTypeUtils/dat/datRepacker.dart[m
+[1mindex dfdaef9..e0ea6e3 100644[m
+[1m--- a/lib/fileTypeUtils/dat/datRepacker.dart[m
+[1m+++ b/lib/fileTypeUtils/dat/datRepacker.dart[m
+[36m@@ -33,6 +33,7 @@[m [mFuture<void> repackDat(String datDir, String exportPath) async {[m
+   var fileSizes = (await Future.wait(filePaths.map((e) => File(e).length()))).toList();[m
+   var fileNumber = filePaths.length;[m
+   var hashData = HashInfo(fileNames);[m
+[32m+[m[32m  var datEndian = fileList.endian == "big" ? Endian.big : Endian.little;[m
+ [m
+   var fileExtensionsSize = 0;[m
+   List<String> fileExtensions = [];[m
+[36m@@ -76,7 +77,7 @@[m [mFuture<void> repackDat(String datDir, String exportPath) async {[m
+   var datSize = fileOffsets.last + fileSizes.last + 1;[m
+   if (datSize % 16 != 0)[m
+     datSize = (datSize / 16).ceil() * 16;[m
+[31m-  var datBytes = ByteDataWrapper.allocate(datSize);[m
+[32m+[m[32m  var datBytes = ByteDataWrapper.allocate(datSize, endian: datEndian);[m
+   datBytes.writeString0P(fileID);[m
+   datBytes.writeUint32(fileNumber);[m
+   datBytes.writeUint32(fileOffsetsOffset);[m
+[1mdiff --git a/lib/fileTypeUtils/mcd/mcdIO.dart b/lib/fileTypeUtils/mcd/mcdIO.dart[m
+[1mindex 7a49cb5..99ec713 100644[m
+[1m--- a/lib/fileTypeUtils/mcd/mcdIO.dart[m
+[1m+++ b/lib/fileTypeUtils/mcd/mcdIO.dart[m
+[36m@@ -1,4 +1,6 @@[m
+ [m
+[32m+[m[32mimport 'dart:typed_data';[m
+[32m+[m
+ import '../../utils/utils.dart';[m
+ import '../utils/ByteDataWrapper.dart';[m
+ [m
+[36m@@ -369,6 +371,7 @@[m [mclass McdFileEvent {[m
+ }[m
+ [m
+ class McdFile {[m
+[32m+[m[32m  late final Endian endian;[m
+   late final McdFileHeader header;[m
+   late final List<McdFileMessage> messages;[m
+   late final List<McdFileSymbol> symbols;[m
+[36m@@ -377,6 +380,7 @@[m [mclass McdFile {[m
+   late final List<McdFileEvent> events;[m
+ [m
+   McdFile.read(ByteDataWrapper bytes) {[m
+[32m+[m[32m    endian = bytes.endian;[m
+     header = McdFileHeader.read(bytes);[m
+     messages = [];[m
+     symbols = [];[m
+[36m@@ -418,16 +422,32 @@[m [mclass McdFile {[m
+   }[m
+ [m
+   McdFile.fromParts(this.header, this.messages, this.symbols, this.glyphs, this.fonts,[m
+[31m-      this.events);[m
+[32m+[m[32m      this.events, {this.endian = Endian.little});[m
+[32m+[m
+[32m+[m[32m  static bool _looksLikeValidHeader(ByteData data, int length, Endian endian) {[m
+[32m+[m[32m    int u32(int off) => data.getUint32(off, endian);[m
+[32m+[m[32m    final offsets = [u32(0), u32(8), u32(16), u32(24), u32(32)];[m
+[32m+[m[32m    final counts = [u32(4), u32(12), u32(20), u32(28), u32(36)];[m
+[32m+[m[32m    if (offsets.any((o) => o < 0x28 || o >= length))[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    if (counts.any((c) => c > 0x100000))[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    return true;[m
+[32m+[m[32m  }[m
+ [m
+   static Future<McdFile> fromFile(String path) async {[m
+     final bytes = await ByteDataWrapper.fromFile(path);[m
+[32m+[m[32m    final data = bytes.buffer.asByteData();[m
+[32m+[m[32m    final bigOk = _looksLikeValidHeader(data, bytes.length, Endian.big);[m
+[32m+[m[32m    final littleOk = _looksLikeValidHeader(data, bytes.length, Endian.little);[m
+[32m+[m[32m    bytes.endian = bigOk && !littleOk ? Endian.big : Endian.little;[m
+[32m+[m[32m    bytes.position = 0;[m
+     return McdFile.read(bytes);[m
+   }[m
+ [m
+   Future<void> writeToFile(String path) async {[m
+     var fileSize = header.eventsOffset + events.length * 0x28;[m
+[31m-    var bytes = ByteDataWrapper.allocate(fileSize);[m
+[32m+[m[32m    var bytes = ByteDataWrapper.allocate(fileSize, endian: endian);[m
+ [m
+     header.write(bytes);[m
+     bytes.position = header.messagesOffset;[m
+[1mdiff --git a/lib/fileTypeUtils/wta/wtaExtractor.dart b/lib/fileTypeUtils/wta/wtaExtractor.dart[m
+[1mindex 24cb929..0639dd2 100644[m
+[1m--- a/lib/fileTypeUtils/wta/wtaExtractor.dart[m
+[1m+++ b/lib/fileTypeUtils/wta/wtaExtractor.dart[m
+[36m@@ -1,32 +1,104 @@[m
+ [m
+ import 'dart:io';[m
+[32m+[m[32mimport 'dart:typed_data';[m
+ [m
+ import 'package:path/path.dart';[m
+ [m
+ import 'wtaReader.dart';[m
+ [m
+[32m+[m[32mfinal _gtxHeader1 = _hexToBytes("4766783200000020000000070000000100000002000000000000000000000000");[m
+[32m+[m[32mfinal _gtxHeader2 = _hexToBytes("424c4b7b0000002000000001000000000000000b0000009c0000000000000000");[m
+[32m+[m[32mfinal _gtxDataPrefix = _hexToBytes("424c4b7b0000002000000001000000000000000c");[m
+[32m+[m[32mfinal _gtxMipPrefix = _hexToBytes("424c4b7b0000002000000001000000000000000d");[m
+[32m+[m[32mfinal _gtxEnd = _hexToBytes("424c4b7b00000020000000010000000000000001000000000000000000000000");[m
+[32m+[m
+[32m+[m[32mUint8List _hexToBytes(String hex) {[m
+[32m+[m[32m  final out = Uint8List(hex.length ~/ 2);[m
+[32m+[m[32m  for (var i = 0; i < out.length; i++)[m
+[32m+[m[32m    out[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);[m
+[32m+[m[32m  return out;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mint _u32be(List<int> data, int off) {[m
+[32m+[m[32m  return (data[off] << 24) | (data[off + 1] << 16) | (data[off + 2] << 8) | data[off + 3];[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mclass WiiUGtxPayload {[m
+[32m+[m[32m  final List<int> gx2;[m
+[32m+[m[32m  final List<int> image;[m
+[32m+[m[32m  final List<int> mipmaps;[m
+[32m+[m[32m  final int dataLength;[m
+[32m+[m[32m  final int mipmapLength;[m
+[32m+[m
+[32m+[m[32m  const WiiUGtxPayload(this.gx2, this.image, this.mipmaps, this.dataLength, this.mipmapLength);[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mWiiUGtxPayload parseWiiUGtx(List<int> gtx) {[m
+[32m+[m[32m  if (gtx.length < 0x40 + 0x9C || String.fromCharCodes(gtx.take(4)) != "Gfx2")[m
+[32m+[m[32m    throw FormatException("Wii U texture replacement must be a GTX file starting with Gfx2");[m
+[32m+[m[32m  final gx2 = gtx.sublist(0x40, 0x40 + 0x9C);[m
+[32m+[m[32m  final dataLength = _u32be(gx2, 0x20);[m
+[32m+[m[32m  final mipmapLength = _u32be(gx2, 0x28);[m
+[32m+[m[32m  final numMipmaps = _u32be(gx2, 0x10);[m
+[32m+[m[32m  final dataStart = 0x20 * 3 + 0x9C;[m
+[32m+[m[32m  final image = gtx.sublist(dataStart, dataStart + dataLength);[m
+[32m+[m[32m  List<int> mipmaps = const [];[m
+[32m+[m[32m  if (numMipmaps > 1 && mipmapLength > 0) {[m
+[32m+[m[32m    final mipStart = 0x20 * 4 + 0x9C + dataLength;[m
+[32m+[m[32m    mipmaps = gtx.sublist(mipStart, mipStart + mipmapLength);[m
+[32m+[m[32m  }[m
+[32m+[m[32m  return WiiUGtxPayload(gx2, image, mipmaps, dataLength, mipmaps.length);[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mUint8List makeWiiUGtx(WtaFile wta, int i, List<int> wtpData) {[m
+[32m+[m[32m  final gx2 = wta.textureInfo[i].rawData;[m
+[32m+[m[32m  if (gx2 == null)[m
+[32m+[m[32m    throw StateError("Wii U WTA texture info is missing raw GX2 metadata");[m
+[32m+[m[32m  final numMipmaps = _u32be(gx2, 0x10);[m
+[32m+[m[32m  final dataLength = _u32be(gx2, 0x20);[m
+[32m+[m[32m  final mipmapLength = _u32be(gx2, 0x28);[m
+[32m+[m[32m  final dataOffset = wta.textureOffsets[i];[m
+[32m+[m[32m  final mipmapOffset = wta.textureMipmaps?[i] ?? 0;[m
+[32m+[m
+[32m+[m[32m  final out = BytesBuilder(copy: false);[m
+[32m+[m[32m  out.add(_gtxHeader1);[m
+[32m+[m[32m  out.add(_gtxHeader2);[m
+[32m+[m[32m  out.add(gx2.take(0x9C).toList());[m
+[32m+[m[32m  out.add(_gtxDataPrefix);[m
+[32m+[m[32m  out.add(gx2.sublist(0x20, 0x24));[m
+[32m+[m[32m  out.add(Uint8List(8));[m
+[32m+[m[32m  out.add(wtpData.sublist(dataOffset, dataOffset + dataLength));[m
+[32m+[m[32m  if (numMipmaps > 1 && mipmapLength > 0 && mipmapOffset != 0) {[m
+[32m+[m[32m    out.add(_gtxMipPrefix);[m
+[32m+[m[32m    out.add(gx2.sublist(0x28, 0x2C));[m
+[32m+[m[32m    out.add(Uint8List(8));[m
+[32m+[m[32m    out.add(wtpData.sublist(mipmapOffset, mipmapOffset + mipmapLength));[m
+[32m+[m[32m  }[m
+[32m+[m[32m  out.add(_gtxEnd);[m
+[32m+[m[32m  return out.toBytes();[m
+[32m+[m[32m}[m
+[32m+[m
+ Future<List<String>> extractWta(String wtaPath, String? wtpPath, bool isWtb) async {[m
+   List<String> texturePaths = [];[m
+   var extractDir = join(dirname(wtaPath), "nier2blender_extracted", basename(wtaPath));[m
+   await Directory(extractDir).create(recursive: true);[m
+   var wta = await WtaFile.readFromFile(wtaPath);[m
+[31m-  var wtpFile = await File(isWtb ? wtaPath : wtpPath!).open();[m
+[31m-  try {[m
+[31m-    for (int i = 0; i < wta.textureOffsets.length; i++) {[m
+[31m-      var texturePath = join(extractDir, makeTextureFileName(i, wta.textureIdx?[i]));[m
+[31m-      texturePaths.add(texturePath);[m
+[31m-      await wtpFile.setPosition(wta.textureOffsets[i]);[m
+[31m-      var textureBytes = await wtpFile.read(wta.textureSizes[i]);[m
+[31m-      await File(texturePath).writeAsBytes(textureBytes);[m
+[31m-    }[m
+[31m-  } finally {[m
+[31m-    await wtpFile.close();[m
+[32m+[m[32m  var textureDataPath = isWtb ? wtaPath : wtpPath!;[m
+[32m+[m[32m  var textureDataBytes = await File(textureDataPath).readAsBytes();[m
+[32m+[m[32m  for (int i = 0; i < wta.textureOffsets.length; i++) {[m
+[32m+[m[32m    final ext = wta.isWiiU && !isWtb ? "gtx" : "dds";[m
+[32m+[m[32m    var texturePath = join(extractDir, makeTextureFileName(i, wta.textureIdx?[i], ext: ext));[m
+[32m+[m[32m    texturePaths.add(texturePath);[m
+[32m+[m[32m    final textureBytes = wta.isWiiU && !isWtb[m
+[32m+[m[32m      ? makeWiiUGtx(wta, i, textureDataBytes)[m
+[32m+[m[32m      : textureDataBytes.sublist(wta.textureOffsets[i], wta.textureOffsets[i] + wta.textureSizes[i]);[m
+[32m+[m[32m    await File(texturePath).writeAsBytes(textureBytes);[m
+   }[m
+   return texturePaths;[m
+ }[m
+ [m
+[31m-String makeTextureFileName(int i, int? id) {[m
+[32m+[m[32mString makeTextureFileName(int i, int? id, {String ext = "dds"}) {[m
+   if (id == null)[m
+[31m-    return "$i.dds";[m
+[31m-  return "${i}_${id.toRadixString(16).padLeft(8, "0")}.dds";[m
+[32m+[m[32m    return "$i.$ext";[m
+[32m+[m[32m  return "${i}_${id.toRadixString(16).padLeft(8, "0")}.$ext";[m
+ }[m
+[1mdiff --git a/lib/fileTypeUtils/wta/wtaReader.dart b/lib/fileTypeUtils/wta/wtaReader.dart[m
+[1mindex 1eecaa9..1d23bdc 100644[m
+[1m--- a/lib/fileTypeUtils/wta/wtaReader.dart[m
+[1m+++ b/lib/fileTypeUtils/wta/wtaReader.dart[m
+[36m@@ -1,4 +1,7 @@[m
+ [m
+[32m+[m[32mimport 'dart:io';[m
+[32m+[m[32mimport 'dart:typed_data';[m
+[32m+[m
+ import '../../stateManagement/events/statusInfo.dart';[m
+ import '../../utils/utils.dart';[m
+ import '../utils/ByteDataWrapper.dart';[m
+[36m@@ -12,6 +15,10 @@[m [mclass WtaFileHeader {[m
+   int offsetTextureFlags;[m
+   int offsetTextureIdx;[m
+   int offsetTextureInfo;[m
+[32m+[m[32m  int offsetTextureMipmaps;[m
+[32m+[m
+[32m+[m[32m  bool get isBigEndian => id == "\u0000BTW";[m
+[32m+[m[32m  int get headerSize => isBigEndian ? 0x24 : 0x20;[m
+ [m
+   WtaFileHeader.read(ByteDataWrapper bytes) :[m
+     id = bytes.readString(4),[m
+[36m@@ -21,8 +28,12 @@[m [mclass WtaFileHeader {[m
+     offsetTextureSizes = bytes.readUint32(),[m
+     offsetTextureFlags = bytes.readUint32(),[m
+     offsetTextureIdx = bytes.readUint32(),[m
+[31m-    offsetTextureInfo = bytes.readUint32();[m
+[31m-  [m
+[32m+[m[32m    offsetTextureInfo = bytes.readUint32(),[m
+[32m+[m[32m    offsetTextureMipmaps = 0 {[m
+[32m+[m[32m      if (isBigEndian)[m
+[32m+[m[32m        offsetTextureMipmaps = bytes.readUint32();[m
+[32m+[m[32m    }[m
+[32m+[m
+   void write(ByteDataWrapper bytes) {[m
+     bytes.writeString(id);[m
+     bytes.writeInt32(unknown);[m
+[36m@@ -32,19 +43,33 @@[m [mclass WtaFileHeader {[m
+     bytes.writeUint32(offsetTextureFlags);[m
+     bytes.writeUint32(offsetTextureIdx);[m
+     bytes.writeUint32(offsetTextureInfo);[m
+[32m+[m[32m    if (isBigEndian)[m
+[32m+[m[32m      bytes.writeUint32(offsetTextureMipmaps);[m
+   }[m
+ }[m
+ [m
+ class WtaFileTextureInfo {[m
+   late int format;[m
+   late List<int> data;[m
+[32m+[m[32m  late List<int>? rawData;[m
+[32m+[m
+[32m+[m[32m  bool get isRaw => rawData != null;[m
+[32m+[m
+[32m+[m[32m  WtaFileTextureInfo(this.format, this.data) : rawData = null;[m
+[32m+[m[32m  WtaFileTextureInfo.raw(this.rawData) : format = 0, data = const [];[m
+ [m
+[31m-  WtaFileTextureInfo(this.format, this.data);[m
+[32m+[m[32m  WtaFileTextureInfo.read(ByteDataWrapper bytes, {int recordSize = 0x14}) {[m
+[32m+[m[32m    if (recordSize == 0x14) {[m
+[32m+[m[32m      format = bytes.readUint32();[m
+[32m+[m[32m      data = bytes.readUint32List(4);[m
+[32m+[m[32m      rawData = null;[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m      rawData = bytes.readUint8List(recordSize);[m
+[32m+[m[32m      format = 0;[m
+[32m+[m[32m      data = const [];[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+ [m
+[31m-  WtaFileTextureInfo.read(ByteDataWrapper bytes) :[m
+[31m-    format = bytes.readUint32(),[m
+[31m-    data = bytes.readUint32List(4);[m
+[31m-  [m
+   static Future<WtaFileTextureInfo> fromDds(String ddsPath) async {[m
+     var dds = await ByteDataWrapper.fromFile(ddsPath);[m
+     dds.position = 84;[m
+[36m@@ -54,7 +79,7 @@[m [mclass WtaFileTextureInfo {[m
+     if (!const ["DXT1", "DXT3", "DXT5"].contains(dxt))[m
+       messageLog.add("Warning: $ddsPath uses unknown DDS format $dxt. This may not work.");[m
+     var isCube = cube == 0xFE00;[m
+[31m-    [m
+[32m+[m
+     int format = 0;[m
+     List<int> data = [3, isCube ? 4 : 0, 1, 0];[m
+     switch (dxt) {[m
+[36m@@ -75,7 +100,20 @@[m [mclass WtaFileTextureInfo {[m
+     return WtaFileTextureInfo(format, data);[m
+   }[m
+ [m
+[32m+[m[32m  static Future<WtaFileTextureInfo> fromGtx(String gtxPath) async {[m
+[32m+[m[32m    var gtx = await File(gtxPath).readAsBytes();[m
+[32m+[m[32m    if (gtx.length < 0x40 + 0x9C || String.fromCharCodes(gtx.take(4)) != "Gfx2")[m
+[32m+[m[32m      throw FormatException("Wii U texture replacement must be a GTX file starting with Gfx2: $gtxPath");[m
+[32m+[m[32m    var gx2 = Uint8List(0xC0);[m
+[32m+[m[32m    gx2.setRange(0, 0x9C, gtx, 0x40);[m
+[32m+[m[32m    return WtaFileTextureInfo.raw(gx2);[m
+[32m+[m[32m  }[m
+[32m+[m
+   void write(ByteDataWrapper bytes) {[m
+[32m+[m[32m    if (rawData != null) {[m
+[32m+[m[32m      bytes.writeBytes(rawData!);[m
+[32m+[m[32m      return;[m
+[32m+[m[32m    }[m
+     bytes.writeUint32(format);[m
+     for (var d in data)[m
+       bytes.writeUint32(d);[m
+[36m@@ -88,12 +126,29 @@[m [mclass WtaFile {[m
+   late List<int> textureSizes;[m
+   late List<int> textureFlags;[m
+   List<int>? textureIdx;[m
+[32m+[m[32m  List<int>? textureMipmaps;[m
+   late List<WtaFileTextureInfo> textureInfo;[m
+[32m+[m[32m  late Endian endian;[m
+[32m+[m
+[32m+[m[32m  bool get isBigEndian => endian == Endian.big;[m
+[32m+[m[32m  bool get isWiiU => isBigEndian;[m
+[32m+[m[32m  int get textureInfoRecordSize => isWiiU ? 0xC0 : 0x14;[m
+ [m
+   static const int albedoFlag = 0x26000020;[m
+   static const int noAlbedoFlag = 0x22000020;[m
+[31m-  [m
+[32m+[m
+   WtaFile.read(ByteDataWrapper bytes) {[m
+[32m+[m[32m    bytes.position = 0;[m
+[32m+[m[32m    var magic = bytes.readString(4);[m
+[32m+[m[32m    if (magic == "\u0000BTW") {[m
+[32m+[m[32m      endian = Endian.big;[m
+[32m+[m[32m    } else if (magic == "WTB\u0000") {[m
+[32m+[m[32m      endian = Endian.little;[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m      throw FormatException("Unsupported WTA/WTB magic: $magic");[m
+[32m+[m[32m    }[m
+[32m+[m[32m    bytes.endian = endian;[m
+[32m+[m[32m    bytes.position = 0;[m
+     header = WtaFileHeader.read(bytes);[m
+     bytes.position = header.offsetTextureOffsets;[m
+     textureOffsets = bytes.readUint32List(header.numTex);[m
+[36m@@ -105,10 +160,14 @@[m [mclass WtaFile {[m
+       bytes.position = header.offsetTextureIdx;[m
+       textureIdx = bytes.readUint32List(header.numTex);[m
+     }[m
+[32m+[m[32m    if (header.offsetTextureMipmaps != 0) {[m
+[32m+[m[32m      bytes.position = header.offsetTextureMipmaps;[m
+[32m+[m[32m      textureMipmaps = bytes.readUint32List(header.numTex);[m
+[32m+[m[32m    }[m
+     bytes.position = header.offsetTextureInfo;[m
+     textureInfo = List.generate([m
+       header.numTex,[m
+[31m-      (i) => WtaFileTextureInfo.read(bytes)[m
+[32m+[m[32m      (i) => WtaFileTextureInfo.read(bytes, recordSize: textureInfoRecordSize)[m
+     );[m
+   }[m
+ [m
+[36m@@ -118,28 +177,34 @@[m [mclass WtaFile {[m
+   }[m
+ [m
+   Future<void> writeToFile(String path) async {[m
+[31m-    var fileSize = header.offsetTextureInfo + textureInfo.length * 0x14;[m
+[31m-    var bytes = ByteDataWrapper.allocate(fileSize);[m
+[32m+[m[32m    var fileSize = header.offsetTextureInfo + textureInfo.length * textureInfoRecordSize;[m
+[32m+[m[32m    var bytes = ByteDataWrapper.allocate(fileSize, endian: endian);[m
+     header.write(bytes);[m
+[31m-    [m
+[32m+[m
+     bytes.position = header.offsetTextureOffsets;[m
+     for (var i = 0; i < textureOffsets.length; i++)[m
+       bytes.writeUint32(textureOffsets[i]);[m
+[31m-    [m
+[32m+[m
+     bytes.position = header.offsetTextureSizes;[m
+     for (var i = 0; i < textureSizes.length; i++)[m
+       bytes.writeUint32(textureSizes[i]);[m
+[31m-    [m
+[32m+[m
+     bytes.position = header.offsetTextureFlags;[m
+     for (var i = 0; i < textureFlags.length; i++)[m
+       bytes.writeUint32(textureFlags[i]);[m
+[31m-    [m
+[32m+[m
+     if (header.offsetTextureIdx != 0) {[m
+       bytes.position = header.offsetTextureIdx;[m
+       for (var i = 0; i < textureIdx!.length; i++)[m
+         bytes.writeUint32(textureIdx![i]);[m
+     }[m
+[31m-    [m
+[32m+[m
+[32m+[m[32m    if (header.offsetTextureMipmaps != 0) {[m
+[32m+[m[32m      bytes.position = header.offsetTextureMipmaps;[m
+[32m+[m[32m      for (var i = 0; i < textureMipmaps!.length; i++)[m
+[32m+[m[32m        bytes.writeUint32(textureMipmaps![i]);[m
+[32m+[m[32m    }[m
+[32m+[m
+     bytes.position = header.offsetTextureInfo;[m
+     for (var i = 0; i < textureInfo.length; i++)[m
+       textureInfo[i].write(bytes);[m
+[36m@@ -149,10 +214,18 @@[m [mclass WtaFile {[m
+ [m
+   void updateHeader() {[m
+     header.numTex = textureOffsets.length;[m
+[31m-    header.offsetTextureOffsets = 0x20;[m
+[32m+[m[32m    header.offsetTextureOffsets = header.headerSize;[m
+     header.offsetTextureSizes = alignTo(header.offsetTextureOffsets + textureOffsets.length * 4, 32);[m
+     header.offsetTextureFlags = alignTo(header.offsetTextureSizes + textureSizes.length * 4, 32);[m
+     header.offsetTextureIdx = textureIdx != null ? alignTo(header.offsetTextureFlags + textureFlags.length * 4, 32) : 0;[m
+[31m-    header.offsetTextureInfo = textureIdx != null ?  alignTo(header.offsetTextureIdx + textureIdx!.length * 4, 32) : alignTo(header.offsetTextureFlags + textureFlags.length * 4, 32);[m
+[32m+[m[32m    final afterIdx = textureIdx != null ? alignTo(header.offsetTextureIdx + textureIdx!.length * 4, 32) : alignTo(header.offsetTextureFlags + textureFlags.length * 4, 32);[m
+[32m+[m[32m    if (isWiiU) {[m
+[32m+[m[32m      textureMipmaps ??= List.filled(textureOffsets.length, 0);[m
+[32m+[m[32m      header.offsetTextureMipmaps = alignTo(afterIdx, 32);[m
+[32m+[m[32m      header.offsetTextureInfo = alignTo(header.offsetTextureMipmaps + textureMipmaps!.length * 4, 32);[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m      header.offsetTextureMipmaps = 0;[m
+[32m+[m[32m      header.offsetTextureInfo = afterIdx;[m
+[32m+[m[32m    }[m
+   }[m
+ }[m
+[1mdiff --git a/lib/stateManagement/openFiles/types/WtaWtpData.dart b/lib/stateManagement/openFiles/types/WtaWtpData.dart[m
+[1mindex a5260d5..82e954d 100644[m
+[1m--- a/lib/stateManagement/openFiles/types/WtaWtpData.dart[m
+[1m+++ b/lib/stateManagement/openFiles/types/WtaWtpData.dart[m
+[36m@@ -195,9 +195,16 @@[m [mclass WtaWtpTextures with HasUuid, Undoable implements Disposable {[m
+     try {[m
+       for (int i = 0; i < wta.textureOffsets.length; i++) {[m
+         messageLog.add("Extracting texture ${i + 1}/${wta.textureOffsets.length}");[m
+[31m-        var texturePath = join(extractDir, makeTextureFileName(i, wta.textureIdx?[i]));[m
+[31m-        await wtpFile.setPosition(wta.textureOffsets[i]);[m
+[31m-        var textureBytes = await wtpFile.read(wta.textureSizes[i]);[m
+[32m+[m[32m        final ext = wta.isWiiU && !isWtb ? "gtx" : "dds";[m
+[32m+[m[32m        var texturePath = join(extractDir, makeTextureFileName(i, wta.textureIdx?[i], ext: ext));[m
+[32m+[m[32m        List<int> textureBytes;[m
+[32m+[m[32m        if (wta.isWiiU && !isWtb) {[m
+[32m+[m[32m          final wtpBytes = await File(wtpPath!).readAsBytes();[m
+[32m+[m[32m          textureBytes = makeWiiUGtx(wta, i, wtpBytes);[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          await wtpFile.setPosition(wta.textureOffsets[i]);[m
+[32m+[m[32m          textureBytes = await wtpFile.read(wta.textureSizes[i]);[m
+[32m+[m[32m        }[m
+         await File(texturePath).writeAsBytes(textureBytes);[m
+         BoolProp? isAlbedo;[m
+         HexProp? flag;[m
+[36m@@ -236,24 +243,52 @@[m [mclass WtaWtpTextures with HasUuid, Undoable implements Disposable {[m
+           (index) => textures[index].getFlag(),[m
+     );[m
+ [m
+[31m-    // update sizes[m
+[31m-    wta.textureSizes = await Future.wait(textures.map((e) async {[m
+[31m-      return await File(e.path.value).length();[m
+[31m-    }));[m
+[31m-[m
+[31m-    // update texture infos[m
+[31m-    wta.textureInfo = await Future.wait(textures.map((e) async {[m
+[31m-      return await WtaFileTextureInfo.fromDds(e.path.value);[m
+[31m-    }));[m
+[32m+[m[32m    List<WiiUGtxPayload>? wiiUGtxPayloads;[m
+[32m+[m[32m    if (wta.isWiiU && !isWtb) {[m
+[32m+[m[32m      wiiUGtxPayloads = await Future.wait(textures.map((e) async {[m
+[32m+[m[32m        return parseWiiUGtx(await File(e.path.value).readAsBytes());[m
+[32m+[m[32m      }));[m
+[32m+[m[32m      wta.textureSizes = wiiUGtxPayloads.map((e) => e.dataLength).toList();[m
+[32m+[m[32m      wta.textureInfo = await Future.wait(textures.map((e) async {[m
+[32m+[m[32m        return await WtaFileTextureInfo.fromGtx(e.path.value);[m
+[32m+[m[32m      }));[m
+[32m+[m[32m      wta.textureMipmaps = List.filled(textures.length, 0);[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m      // update sizes[m
+[32m+[m[32m      wta.textureSizes = await Future.wait(textures.map((e) async {[m
+[32m+[m[32m        return await File(e.path.value).length();[m
+[32m+[m[32m      }));[m
+[32m+[m
+[32m+[m[32m      // update texture infos[m
+[32m+[m[32m      wta.textureInfo = await Future.wait(textures.map((e) async {[m
+[32m+[m[32m        return await WtaFileTextureInfo.fromDds(e.path.value);[m
+[32m+[m[32m      }));[m
+[32m+[m[32m    }[m
+ [m
+     wta.updateHeader();[m
+ [m
+[31m-    // update offsets (4096 byte alignment)[m
+[31m-    int offset = isWtb ? alignTo(wta.header.offsetTextureInfo + wta.textureInfo.length * 20, 32) : 0;[m
+[32m+[m[32m    // update offsets (4096 byte alignment on PC, 0x2000 for Wii U GTX payloads)[m
+[32m+[m[32m    int offset = isWtb ? alignTo(wta.header.offsetTextureInfo + wta.textureInfo.length * wta.textureInfoRecordSize, 32) : 0;[m
+[32m+[m[32m    final textureAlignment = wta.isWiiU && !isWtb ? 0x2000 : 0x1000;[m
+     for (int i = 0; i < wta.textureOffsets.length; i++) {[m
+[32m+[m[32m      offset = alignTo(offset, textureAlignment);[m
+       wta.textureOffsets[i] = offset;[m
+       offset += wta.textureSizes[i];[m
+[31m-      offset = (offset + 4095) & ~4095;[m
+[32m+[m[32m    }[m
+[32m+[m[32m    if (wiiUGtxPayloads != null) {[m
+[32m+[m[32m      offset = alignTo(offset, textureAlignment);[m
+[32m+[m[32m      for (int i = 0; i < wiiUGtxPayloads.length; i++) {[m
+[32m+[m[32m        final mipLength = wiiUGtxPayloads[i].mipmapLength;[m
+[32m+[m[32m        if (mipLength > 0) {[m
+[32m+[m[32m          offset = alignTo(offset, textureAlignment);[m
+[32m+[m[32m          wta.textureMipmaps![i] = offset;[m
+[32m+[m[32m          offset += mipLength;[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          wta.textureMipmaps![i] = 0;[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m      offset = alignTo(offset, textureAlignment);[m
+     }[m
+ [m
+     // write wta[m
+[36m@@ -268,12 +303,27 @@[m [mclass WtaWtpTextures with HasUuid, Undoable implements Disposable {[m
+     try {[m
+       for (int i = 0; i < wta.textureOffsets.length; i++) {[m
+         await wtpFile.setPosition(wta.textureOffsets[i]);[m
+[31m-        var texturePath = textures[i].path.value;[m
+[31m-        var textureBytes = await File(texturePath).readAsBytes();[m
+[31m-        await wtpFile.writeFrom(textureBytes);[m
+[32m+[m[32m        if (wiiUGtxPayloads != null) {[m
+[32m+[m[32m          await wtpFile.writeFrom(wiiUGtxPayloads[i].image);[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          var texturePath = textures[i].path.value;[m
+[32m+[m[32m          var textureBytes = await File(texturePath).readAsBytes();[m
+[32m+[m[32m          await wtpFile.writeFrom(textureBytes);[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m[32m      if (wiiUGtxPayloads != null) {[m
+[32m+[m[32m        for (int i = 0; i < wta.textureOffsets.length; i++) {[m
+[32m+[m[32m          final mipOffset = wta.textureMipmaps![i];[m
+[32m+[m[32m          if (mipOffset != 0 && wiiUGtxPayloads[i].mipmaps.isNotEmpty) {[m
+[32m+[m[32m            await wtpFile.setPosition(mipOffset);[m
+[32m+[m[32m            await wtpFile.writeFrom(wiiUGtxPayloads[i].mipmaps);[m
+[32m+[m[32m          }[m
+[32m+[m[32m        }[m
+       }[m
+[31m-      var endPadding = await wtpFile.position() % 4096;[m
+[31m-      await wtpFile.writeFrom(List.filled(endPadding, 0));[m
+[32m+[m[32m      var alignment = wta.isWiiU && !isWtb ? 0x2000 : 4096;[m
+[32m+[m[32m      var endPadding = await wtpFile.position() % alignment;[m
+[32m+[m[32m      if (endPadding != 0)[m
+[32m+[m[32m        await wtpFile.writeFrom(List.filled(alignment - endPadding, 0));[m
+     } finally {[m
+       await wtpFile.close();[m
+     }[m
+[1mdiff --git a/lib/utils/utils.dart b/lib/utils/utils.dart[m
+[1mindex 5739336..ae07e0e 100644[m
+[1m--- a/lib/utils/utils.dart[m
+[1m+++ b/lib/utils/utils.dart[m
+[36m@@ -517,8 +517,10 @@[m [mclass DatFiles {[m
+   final int version;[m
+   final List<String> files;[m
+   final List<String>? originalFileOrder;[m
+[32m+[m[32m  final String endian;[m
+[32m+[m[32m  final String? platform;[m
+ [m
+[31m-  const DatFiles(this.version, this.files, [this.originalFileOrder]);[m
+[32m+[m[32m  const DatFiles(this.version, this.files, [this.originalFileOrder, this.endian = "little", this.platform]);[m
+ }[m
+ Future<DatFiles> getDatFileList(String datDir, {bool allowMissingInfoFile = true, bool removeDuplicates = false}) async {[m
+   var datInfoPath = path.join(datDir, "dat_info.json");[m
+[36m@@ -553,7 +555,9 @@[m [mFuture<DatFiles> _getDatFileListFromJson(String datInfoPath, bool removeDuplicat[m
+     originalFileOrder = (datInfoJson["original_order"] as List).cast<String>();[m
+   }[m
+   var version = datInfoJson["version"] is int ? datInfoJson["version"] as int : 1;[m
+[31m-  return DatFiles(version, files, originalFileOrder);[m
+[32m+[m[32m  var endian = datInfoJson["endian"] is String ? datInfoJson["endian"] as String : "little";[m
+[32m+[m[32m  var platform = datInfoJson["platform"] is String ? datInfoJson["platform"] as String : null;[m
+[32m+[m[32m  return DatFiles(version, files, originalFileOrder, endian, platform);[m
+ }[m
+ [m
+ Future<DatFiles> _getDatFileListFromMetadata(String metadataPath, bool removeDuplicates) async {[m
+[1mdiff --git a/lib/widgets/filesView/types/wtaWtpEditor.dart b/lib/widgets/filesView/types/wtaWtpEditor.dart[m
+[1mindex bf1ddbb..11e3e32 100644[m
+[1m--- a/lib/widgets/filesView/types/wtaWtpEditor.dart[m
+[1m+++ b/lib/widgets/filesView/types/wtaWtpEditor.dart[m
+[36m@@ -74,11 +74,14 @@[m [mclass _TexturesTableConfig with CustomTableConfig {[m
+     );[m
+   }[m
+ [m
+[32m+[m[32m  String get _textureExt => textures.any((e) => e.path.value.toLowerCase().endsWith(".gtx")) ? "gtx" : "dds";[m
+[32m+[m
+   Future<void> _selectTexture(int index) async {[m
+[32m+[m[32m    final ext = _textureExt;[m
+     var paths = await FilePicker.platform.pickFiles([m
+[31m-      dialogTitle: "Select DDS",[m
+[32m+[m[32m      dialogTitle: "Select ${ext.toUpperCase()}",[m
+       type: FileType.custom,[m
+[31m-      allowedExtensions: ["dds"],[m
+[32m+[m[32m      allowedExtensions: [ext],[m
+     );[m
+     if (paths == null)[m
+       return;[m
+[36m@@ -113,16 +116,17 @@[m [mclass _TexturesTableConfig with CustomTableConfig {[m
+ [m
+   Future<void> patchImportFolder() async {[m
+     var folderSel = await FilePicker.platform.getDirectoryPath([m
+[31m-      dialogTitle: "Select folder with DDS files",[m
+[32m+[m[32m      dialogTitle: "Select folder with ${_textureExt.toUpperCase()} files",[m
+     );[m
+     if (folderSel == null)[m
+       return;[m
+[31m-    var allDdsFiles = await Directory(folderSel).list()[m
+[31m-      .where((e) => e is File && e.path.endsWith(".dds"))[m
+[32m+[m[32m    final ext = _textureExt;[m
+[32m+[m[32m    var allTextureFiles = await Directory(folderSel).list()[m
+[32m+[m[32m      .where((e) => e is File && e.path.toLowerCase().endsWith(".$ext"))[m
+       .map((e) => e.path)[m
+       .toList();[m
+[31m-    List<String> ddsFilesOrdered = List.generate(allDdsFiles.length, (index) => "");[m
+[31m-    for (var dds in allDdsFiles) {[m
+[32m+[m[32m    List<String> ddsFilesOrdered = List.generate(allTextureFiles.length, (index) => "");[m
+[32m+[m[32m    for (var dds in allTextureFiles) {[m
+       var indexRes = RegExp(r"^\d+").firstMatch(basename(dds));[m
+       if (indexRes == null)[m
+         continue;[m
+[36m@@ -134,7 +138,7 @@[m [mclass _TexturesTableConfig with CustomTableConfig {[m
+       ddsFilesOrdered[index] = dds;[m
+     }[m
+     if (ddsFilesOrdered.any((e) => e.isEmpty)) {[m
+[31m-      showToast("Some DDS files are missing");[m
+[32m+[m[32m      showToast("Some ${_textureExt.toUpperCase()} files are missing");[m
+       return;[m
+     }[m
+     textures.addAll(ddsFilesOrdered.map((file) => WtaTextureEntry([m
+[36m@@ -145,7 +149,7 @@[m [mclass _TexturesTableConfig with CustomTableConfig {[m
+       flag: texData.useFlagsSimpleMode ? null : HexProp(textures.isNotEmpty ? textures.last.flag!.value : 0, fileId: this.file.uuid),[m
+     )));[m
+     file.onUndoableEvent();[m
+[31m-    showToast("Added ${ddsFilesOrdered.length} DDS files");[m
+[32m+[m[32m    showToast("Added ${ddsFilesOrdered.length} ${_textureExt.toUpperCase()} files");[m
+   }[m
+ }[m
+ [m
+[1mdiff --git a/lib/widgets/tools/toolsOverview.dart b/lib/widgets/tools/toolsOverview.dart[m
+[1mindex 91d4327..5dc1537 100644[m
+[1m--- a/lib/widgets/tools/toolsOverview.dart[m
+[1m+++ b/lib/widgets/tools/toolsOverview.dart[m
+[36m@@ -4,7 +4,7 @@[m [mimport 'package:flutter/material.dart';[m
+ import '../misc/SmoothScrollBuilder.dart';[m
+ import '../theme/customTheme.dart';[m
+ import 'ExtractFileTool.dart';[m
+[31m-import 'batchLocalizationTool.dart';[m
+[32m+[m[32mimport 'BatchLocalizationTool.dart';[m
+ import 'ddsTools.dart';[m
+ [m
+ class ToolsOverview extends StatefulWidget {[m

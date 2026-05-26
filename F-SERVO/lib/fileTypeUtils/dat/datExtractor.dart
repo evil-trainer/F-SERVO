@@ -1,0 +1,221 @@
+
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:path/path.dart' as path;
+
+import '../../stateManagement/events/statusInfo.dart';
+import '../../utils/utils.dart';
+import '../pak/pakExtractor.dart';
+import '../utils/ByteDataWrapper.dart';
+
+const currentDatVersion = 4;
+
+/*
+struct {
+    char    id[4];
+    uint32  fileNumber;
+    uint32  fileOffsetsOffset <format=hex>;
+    uint32  fileExtensionsOffset <format=hex>;
+    uint32  fileNamesOffset <format=hex>;
+    uint32  fileSizesOffset <format=hex>;
+    uint32  hashMapOffset <format=hex>;
+} header;
+*/
+class _DatHeader {
+  late String id;
+  late int fileNumber;
+  late int fileOffsetsOffset;
+  late int fileExtensionsOffset;
+  late int fileNamesOffset;
+  late int fileSizesOffset;
+  late int hashMapOffset;
+  late Endian endian;
+
+  bool get isBigEndian => endian == Endian.big;
+  String get endianName => isBigEndian ? "big" : "little";
+  String get platformName => isBigEndian ? "wiiu" : "pc";
+
+  _DatHeader(ByteDataWrapper bytes) {
+    bytes.position = 0;
+    id = bytes.readString(4);
+    if (!id.startsWith("DAT"))
+      throw FormatException("Invalid DAT magic: $id");
+
+    final fieldsOffset = bytes.position;
+
+    bytes.endian = Endian.little;
+    _readFields(bytes, fieldsOffset);
+    if (_looksValid(bytes)) {
+      endian = Endian.little;
+      return;
+    }
+
+    bytes.endian = Endian.big;
+    _readFields(bytes, fieldsOffset);
+    if (_looksValid(bytes)) {
+      endian = Endian.big;
+      return;
+    }
+
+    throw FormatException("Unsupported DAT header: neither little-endian nor big-endian tables are valid");
+  }
+
+  void _readFields(ByteDataWrapper bytes, int fieldsOffset) {
+    bytes.position = fieldsOffset;
+    fileNumber = bytes.readUint32();
+    fileOffsetsOffset = bytes.readUint32();
+    fileExtensionsOffset = bytes.readUint32();
+    fileNamesOffset = bytes.readUint32();
+    fileSizesOffset = bytes.readUint32();
+    hashMapOffset = bytes.readUint32();
+  }
+
+  bool _rangeInside(int offset, int size, int length) {
+    return offset >= 0x20 && size >= 0 && offset <= length && offset + size <= length;
+  }
+
+  bool _looksValid(ByteDataWrapper bytes) {
+    final len = bytes.length;
+    if (fileNumber <= 0 || fileNumber > 100000)
+      return false;
+    if (!_rangeInside(fileOffsetsOffset, fileNumber * 4, len))
+      return false;
+    if (!_rangeInside(fileExtensionsOffset, fileNumber * 4, len))
+      return false;
+    if (!_rangeInside(fileNamesOffset, 4, len))
+      return false;
+    if (!_rangeInside(fileSizesOffset, fileNumber * 4, len))
+      return false;
+    if (hashMapOffset < fileSizesOffset || hashMapOffset > len)
+      return false;
+    return fileOffsetsOffset < fileExtensionsOffset &&
+      fileExtensionsOffset < fileNamesOffset &&
+      fileNamesOffset < fileSizesOffset &&
+      fileSizesOffset < hashMapOffset;
+  }
+}
+
+Future<List<String>> extractDatFiles(String datPath, { bool shouldExtractPakFiles = false }) async {
+  print("Extracting dat files from $datPath");
+  messageLog.add("Extracting ${path.basename(datPath)}...");
+
+  var bytes = await ByteDataWrapper.fromFile(datPath);
+  var header = _DatHeader(bytes);
+  bytes.endian = header.endian;
+  bytes.position = header.fileOffsetsOffset;
+  var fileOffsets = bytes.readUint32List(header.fileNumber);
+  bytes.position = header.fileSizesOffset;
+  var fileSizes = bytes.readUint32List(header.fileNumber);
+  bytes.position = header.fileNamesOffset;
+  var nameLength = bytes.readUint32();
+  var fileNames = List<String>
+    .generate(header.fileNumber, (index) =>
+    bytes.readString(nameLength).split("\u0000")[0]);
+
+  // extract dir is file path --> /nier2blender_extracted/[filename]/
+  var datDir = path.dirname(datPath);
+  var extractDir = path.join(datDir, "nier2blender_extracted", path.basename(datPath));
+  await Directory(extractDir).create(recursive: true);
+  List<String> filePaths = [];
+  for (int i = 0; i < header.fileNumber; i++) {
+    bytes.position = fileOffsets[i];
+    var extractedFile = File(path.join(extractDir, fileNames[i]));
+    filePaths.add(extractedFile.path);
+    await extractedFile.writeAsBytes(bytes.readUint8List(fileSizes[i]));
+  }
+
+  dynamic jsonMetadata = {
+    "version": currentDatVersion,
+    "files": deduplicate(fileNames),
+    "original_order": fileNames,
+    "basename": path.basename(datPath).split(".")[0],
+    "ext": path.basename(datPath).split(".")[1],
+    "endian": header.endianName,
+    "platform": header.platformName,
+  };
+  await File(path.join(extractDir, "dat_info.json"))
+    .writeAsString(const JsonEncoder.withIndent("\t").convert(jsonMetadata));
+
+  if (shouldExtractPakFiles) {
+    var pakFiles = fileNames.where((file) => file.endsWith(".pak"));
+    await Future.wait(pakFiles.map<Future<void>>((pakFile) async {
+      var pakPath = path.join(extractDir, pakFile);
+      await extractPakFiles(pakPath, yaxToXml: true);
+    }));
+  }
+
+  messageLog.add("Extracting ${path.basename(datPath)} done");
+
+  return filePaths;
+}
+
+class ExtractedInnerFile {
+  final String path;
+  final ByteDataWrapper bytes;
+
+  ExtractedInnerFile(this.path, this.bytes);
+}
+
+Stream<ExtractedInnerFile> extractDatFilesAsStream(String datPath) async* {
+  try {
+    var bytes = await ByteDataWrapper.fromFile(datPath);
+    var header = _DatHeader(bytes);
+    bytes.endian = header.endian;
+    bytes.position = header.fileOffsetsOffset;
+    var fileOffsets = bytes.readUint32List(header.fileNumber);
+    bytes.position = header.fileSizesOffset;
+    var fileSizes = bytes.readUint32List(header.fileNumber);
+    bytes.position = header.fileNamesOffset;
+    var nameLength = bytes.readUint32();
+    var fileNames = List<String>
+      .generate(header.fileNumber, (index) =>
+      bytes.readString(nameLength).split("\u0000")[0]);
+
+    for (int i = 0; i < header.fileNumber; i++) {
+      bytes.position = fileOffsets[i];
+      yield ExtractedInnerFile(
+        path.join(datPath, fileNames[i]),
+        bytes.makeSubView(fileSizes[i])
+      );
+    }
+  } catch (e, s) {
+    print("Error while extracting dat files from $datPath");
+    print("$e\n$s");
+    return;
+  }
+}
+
+Future<List<String>> peekDatFileNames(String datPath) async {
+  var bytes = await ByteDataWrapper.fromFile(datPath);
+  var header = _DatHeader(bytes);
+  bytes.endian = header.endian;
+  bytes.position = header.fileNamesOffset;
+  var nameLength = bytes.readUint32();
+  return List<String>
+    .generate(header.fileNumber, (index) =>
+    bytes.readString(nameLength).split("\u0000")[0]);
+}
+
+
+Future<void> updateDatInfoFileOriginalOrder(String datPath, String extractDir) async {
+  var datInfoPath = path.join(extractDir, "dat_info.json");
+  if (!await File(datInfoPath).exists())
+    return;
+
+  var bytes = await ByteDataWrapper.fromFile(datPath);
+  var header = _DatHeader(bytes);
+  bytes.endian = header.endian;
+  bytes.position = header.fileNamesOffset;
+  var nameLength = bytes.readUint32();
+  var fileNames = List.generate(header.fileNumber, (index) => bytes.readString(nameLength).split("\u0000")[0]);
+
+  var datInfo = jsonDecode(await File(datInfoPath).readAsString()) as Map;
+  datInfo["original_order"] = fileNames;
+  datInfo["version"] = currentDatVersion;
+  datInfo["endian"] = header.endianName;
+  datInfo["platform"] = header.platformName;
+  var datInfoJson = const JsonEncoder.withIndent("\t").convert(datInfo);
+  await File(datInfoPath).writeAsString(datInfoJson);
+}
